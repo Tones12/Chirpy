@@ -11,13 +11,16 @@ import (
 	"os"
 	"database/sql"
 	"github.com/joho/godotenv"
-	"github.com/tones12/chirpy/internal/database"
+	"time"
+	"github.com/google/uuid"
+	"github.com/Tones12/Chirpy/internal/database"
 	_ "github.com/lib/pq"
 )
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
-	dbQueries *database.Queries
+	db *database.Queries
+	platform string
 }
 
 type errReturnVals struct {
@@ -31,12 +34,29 @@ type validReturnVals struct {
 type parameters struct {
 	Body string `json:"body"`
 }
+
+type User struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Email     string    `json:"email"`
+}
+
+
+func MapDBUserToUser(dbUser database.User) User {
+	return User{
+		ID:        dbUser.ID,
+		Email:     dbUser.Email,
+		CreatedAt: dbUser.CreatedAt,
+		UpdatedAt: dbUser.UpdatedAt,
+	}
+}
 	
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		cfg.fileserverHits.Add(1)
 		next.ServeHTTP(w, req)
-	})	
+	})
 }
 
 func(cfg *apiConfig) resetMetrics(w http.ResponseWriter, req *http.Request) {
@@ -84,14 +104,19 @@ func censorText(input string, badWords []string) string {
 func main() {
 	godotenv.Load()
 	dbURL := os.Getenv("DB_URL")
+	platform := os.Getenv("PLATFORM")
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
-		log.Printf("Error: %s", err)
+		log.Fatalf("error opening database: %v", err)
 	}
 	dbQueries := database.New(db)
 
-	var apiCfg apiConfig
-	
+	apiCfg := apiConfig{
+    	fileserverHits: atomic.Int32{},
+    	db:             dbQueries,
+		platform:		platform,
+	}
+
 	mux := http.NewServeMux()
 
 	server := &http.Server{
@@ -109,7 +134,13 @@ func main() {
 		w.Write([]byte(text))
 	})
 	
-	mux.HandleFunc("POST /admin/reset", apiCfg.resetMetrics)
+	mux.HandleFunc("POST /admin/reset", func(w http.ResponseWriter, req *http.Request){
+		if apiCfg.platform != "dev" {
+			respondWithError(w, 403, "Forbidden")
+		}
+		apiCfg.resetMetrics(w, req)
+		err = db.DeleteUsers(r.Context())
+	})
 	
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, req *http.Request){
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
@@ -143,6 +174,27 @@ func main() {
 		}
 		
 		respondWithJSON(w, 200, validResp)
+	})
+	
+	mux.HandleFunc("POST /api/users", func(w http.ResponseWriter, req *http.Request){
+		decoder := json.NewDecoder(req.Body)
+		params := parameters{}
+		err := decoder.Decode(&params)
+		if err != nil {
+			msg := fmt.Sprintf("Error decoding JSON: %s", err)
+			respondWithError(w, 500, msg)
+			return
+		}
+		user, err := CreateUser(r.Context(), params.Body)
+		if err != nil {
+			msg := fmt.Sprintf("Error creating User: %s", err)
+			respondWithError(w, 500, msg)
+			return
+		}
+
+		userResponse := MapDBUsertoUser(user)
+		
+		respondWithJSON(w, 200, userResponse)
 	})
 
 	err = server.ListenAndServe()
