@@ -1,26 +1,27 @@
 package main
 
 import (
-	"net/http"
-	"fmt"
-	"sync/atomic"
-	"encoding/json"
-	"log"
-	"strings"
-	"regexp"
-	"os"
 	"database/sql"
-	"github.com/joho/godotenv"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"regexp"
+	"strings"
+	"sync/atomic"
 	"time"
-	"github.com/google/uuid"
+
 	"github.com/Tones12/Chirpy/internal/database"
+	"github.com/google/uuid"
+	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
 type apiConfig struct {
 	fileserverHits atomic.Int32
-	db *database.Queries
-	platform string
+	db             *database.Queries
+	platform       string
 }
 
 type errReturnVals struct {
@@ -33,6 +34,7 @@ type validReturnVals struct {
 
 type parameters struct {
 	Body string `json:"body"`
+	Email string `json:"email"`
 }
 
 type User struct {
@@ -42,7 +44,6 @@ type User struct {
 	Email     string    `json:"email"`
 }
 
-
 func MapDBUserToUser(dbUser database.User) User {
 	return User{
 		ID:        dbUser.ID,
@@ -51,7 +52,7 @@ func MapDBUserToUser(dbUser database.User) User {
 		UpdatedAt: dbUser.UpdatedAt,
 	}
 }
-	
+
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
 		cfg.fileserverHits.Add(1)
@@ -59,7 +60,7 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	})
 }
 
-func(cfg *apiConfig) resetMetrics(w http.ResponseWriter, req *http.Request) {
+func (cfg *apiConfig) resetMetrics(w http.ResponseWriter) {
 	cfg.fileserverHits.Swap(0)
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
@@ -112,43 +113,43 @@ func main() {
 	dbQueries := database.New(db)
 
 	apiCfg := apiConfig{
-    	fileserverHits: atomic.Int32{},
-    	db:             dbQueries,
-		platform:		platform,
+		fileserverHits: atomic.Int32{},
+		db:             dbQueries,
+		platform:       platform,
 	}
 
 	mux := http.NewServeMux()
 
 	server := &http.Server{
-		Handler:	mux,
-		Addr:		":8080",
+		Handler: mux,
+		Addr:    ":8080",
 	}
 
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(http.StripPrefix("/app", http.FileServer(http.Dir(".")))))
-	
-	mux.HandleFunc("GET /admin/metrics", func(w http.ResponseWriter, req *http.Request){
+
+	mux.HandleFunc("GET /admin/metrics", func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "text/html; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		fileserverHits := apiCfg.fileserverHits.Load()
 		text := fmt.Sprintf("<html>\n<body>\n<h1>Welcome, Chirpy Admin</h1>\n<p>Chirpy has been visited %d times!</p>\n</body>\n</html>", fileserverHits)
 		w.Write([]byte(text))
 	})
-	
-	mux.HandleFunc("POST /admin/reset", func(w http.ResponseWriter, req *http.Request){
+
+	mux.HandleFunc("POST /admin/reset", func(w http.ResponseWriter, req *http.Request) {
 		if apiCfg.platform != "dev" {
 			respondWithError(w, 403, "Forbidden")
 		}
-		apiCfg.resetMetrics(w, req)
-		err = db.DeleteUsers(r.Context())
+		apiCfg.resetMetrics(w)
+		err = apiCfg.db.DeleteUsers(req.Context())
 	})
-	
-	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, req *http.Request){
+
+	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, req *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
-	
-	mux.HandleFunc("POST /api/validate_chirp", func(w http.ResponseWriter, req *http.Request){
+
+	mux.HandleFunc("POST /api/validate_chirp", func(w http.ResponseWriter, req *http.Request) {
 		decoder := json.NewDecoder(req.Body)
 		params := parameters{}
 		err := decoder.Decode(&params)
@@ -157,7 +158,7 @@ func main() {
 			respondWithError(w, 500, msg)
 			return
 		}
-		
+
 		if len(params.Body) > 140 {
 			respondWithError(w, 400, "Chirp is too long")
 			return
@@ -172,11 +173,11 @@ func main() {
 		validResp := validReturnVals{
 			CleanedBody: cleanText,
 		}
-		
+
 		respondWithJSON(w, 200, validResp)
 	})
-	
-	mux.HandleFunc("POST /api/users", func(w http.ResponseWriter, req *http.Request){
+
+	mux.HandleFunc("POST /api/users", func(w http.ResponseWriter, req *http.Request) {
 		decoder := json.NewDecoder(req.Body)
 		params := parameters{}
 		err := decoder.Decode(&params)
@@ -185,16 +186,16 @@ func main() {
 			respondWithError(w, 500, msg)
 			return
 		}
-		user, err := CreateUser(r.Context(), params.Body)
+		user, err := apiCfg.db.CreateUser(req.Context(), params.Email)
 		if err != nil {
 			msg := fmt.Sprintf("Error creating User: %s", err)
 			respondWithError(w, 500, msg)
 			return
 		}
 
-		userResponse := MapDBUsertoUser(user)
-		
-		respondWithJSON(w, 200, userResponse)
+		userResponse := MapDBUserToUser(user)
+
+		respondWithJSON(w, 201, userResponse)
 	})
 
 	err = server.ListenAndServe()

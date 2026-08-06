@@ -1,8 +1,9 @@
 Login directions for DB:
-@Tones12 ➜ /workspaces/Chirpy (main) $ sudo service postgresql start
- * Starting PostgreSQL 16 database server                                                                                 [ OK ] 
-@Tones12 ➜ /workspaces/Chirpy (main) $ psql -U postgres -h localhost
+Start database server:
+sudo service postgresql start
+Connect to database:
+psql -U postgres -h localhost
 pw = postgres
 
 Direct Connectiont to DB:
-@Tones12 ➜ /workspaces/Chirpy (main) $ psql "postgres://postgres:postgres@localhost:5432/chirpy?sslmode=disable"
+psql "postgres://postgres:postgres@localhost:5432/chirpy?sslmode=disable"
