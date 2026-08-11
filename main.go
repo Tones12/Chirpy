@@ -28,13 +28,10 @@ type errReturnVals struct {
 	Error string `json:"error"`
 }
 
-type validReturnVals struct {
-	CleanedBody string `json:"cleaned_body"`
-}
-
 type parameters struct {
-	Body string `json:"body"`
-	Email string `json:"email"`
+	Body   string `json:"body"`
+	Email  string `json:"email"`
+	UserID string `json:"user_id"`
 }
 
 type User struct {
@@ -44,12 +41,30 @@ type User struct {
 	Email     string    `json:"email"`
 }
 
+type Chirp struct {
+	ID        uuid.UUID `json:"id"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Body      string    `json:"body"`
+	UserID    uuid.UUID `json:"user_id"`
+}
+
 func MapDBUserToUser(dbUser database.User) User {
 	return User{
 		ID:        dbUser.ID,
 		Email:     dbUser.Email,
 		CreatedAt: dbUser.CreatedAt,
 		UpdatedAt: dbUser.UpdatedAt,
+	}
+}
+
+func MapDBChirpToChirp(dbChirp database.Chirp) Chirp {
+	return Chirp{
+		ID:        dbChirp.ID,
+		CreatedAt: dbChirp.CreatedAt,
+		UpdatedAt: dbChirp.UpdatedAt,
+		Body:      dbChirp.Body,
+		UserID:    dbChirp.UserID,
 	}
 }
 
@@ -149,34 +164,6 @@ func main() {
 		w.Write([]byte("OK"))
 	})
 
-	mux.HandleFunc("POST /api/validate_chirp", func(w http.ResponseWriter, req *http.Request) {
-		decoder := json.NewDecoder(req.Body)
-		params := parameters{}
-		err := decoder.Decode(&params)
-		if err != nil {
-			msg := fmt.Sprintf("Error decoding JSON: %s", err)
-			respondWithError(w, 500, msg)
-			return
-		}
-
-		if len(params.Body) > 140 {
-			respondWithError(w, 400, "Chirp is too long")
-			return
-		}
-
-		// Check for profanities: kerfuffle, sharbert, fornax
-		badWords := []string{"kerfuffle", "sharbert", "fornax"}
-		dirtyText := params.Body
-
-		cleanText := censorText(dirtyText, badWords)
-
-		validResp := validReturnVals{
-			CleanedBody: cleanText,
-		}
-
-		respondWithJSON(w, 200, validResp)
-	})
-
 	mux.HandleFunc("POST /api/users", func(w http.ResponseWriter, req *http.Request) {
 		decoder := json.NewDecoder(req.Body)
 		params := parameters{}
@@ -192,10 +179,78 @@ func main() {
 			respondWithError(w, 500, msg)
 			return
 		}
-
 		userResponse := MapDBUserToUser(user)
 
 		respondWithJSON(w, 201, userResponse)
+	})
+
+	mux.HandleFunc("POST /api/chirps", func(w http.ResponseWriter, req *http.Request) {
+		decoder := json.NewDecoder(req.Body)
+		params := parameters{}
+		err := decoder.Decode(&params)
+		if err != nil {
+			msg := fmt.Sprintf("Error decoding JSON: %s", err)
+			respondWithError(w, 500, msg)
+			return
+		}
+
+		// Check if user id is valid
+		parsedUserID, err := uuid.Parse(params.UserID)
+		if err != nil {
+			msg := fmt.Sprintf("Error parsing user id: %s", err)
+			respondWithError(w, 400, msg)
+		}
+
+		// Check chirp length
+		if len(params.Body) > 140 {
+			respondWithError(w, 400, "Chirp is too long, must be 140 characters or less")
+			return
+		}
+
+		// Check for profanities: kerfuffle, sharbert, fornax
+		badWords := []string{"kerfuffle", "sharbert", "fornax"}
+		dirtyText := params.Body
+		cleanText := censorText(dirtyText, badWords)
+		chirpParams := database.CreateChirpParams{
+			Body:   cleanText,
+			UserID: parsedUserID,
+		}
+
+		//Database insert
+		dbChirp, err := apiCfg.db.CreateChirp(req.Context(), chirpParams)
+
+		//Convert to JSON chirp struct
+		chirp := MapDBChirpToChirp(dbChirp)
+
+		respondWithJSON(w, 201, chirp)
+	})
+
+	mux.HandleFunc("GET /api/chirps", func(w http.ResponseWriter, req *http.Request) {
+		dbChirpsList, err := apiCfg.db.ListChirps(req.Context())
+		if err != nil {
+			msg := fmt.Sprintf("Error getting chirps: %s", err)
+			respondWithError(w, 500, msg)
+		}
+		chirpsList := []Chirp{}
+		for _, dbChirp := range dbChirpsList {
+			chirp := MapDBChirpToChirp(dbChirp)
+			chirpsList = append(chirpsList, chirp)
+		}
+		respondWithJSON(w, 200, chirpsList)
+	})
+	
+	mux.HandleFunc("GET /api/chirps", func(w http.ResponseWriter, req *http.Request) {
+		dbChirpsList, err := apiCfg.db.ListChirps(req.Context())
+		if err != nil {
+			msg := fmt.Sprintf("Error getting chirps: %s", err)
+			respondWithError(w, 500, msg)
+		}
+		chirpsList := []Chirp{}
+		for _, dbChirp := range dbChirpsList {
+			chirp := MapDBChirpToChirp(dbChirp)
+			chirpsList = append(chirpsList, chirp)
+		}
+		respondWithJSON(w, 200, chirpsList)
 	})
 
 	err = server.ListenAndServe()
