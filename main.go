@@ -124,6 +124,7 @@ func main() {
 	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
 		log.Fatalf("error opening database: %v", err)
+		return
 	}
 	dbQueries := database.New(db)
 
@@ -153,6 +154,7 @@ func main() {
 	mux.HandleFunc("POST /admin/reset", func(w http.ResponseWriter, req *http.Request) {
 		if apiCfg.platform != "dev" {
 			respondWithError(w, 403, "Forbidden")
+			return
 		}
 		apiCfg.resetMetrics(w)
 		err = apiCfg.db.DeleteUsers(req.Context())
@@ -199,6 +201,7 @@ func main() {
 		if err != nil {
 			msg := fmt.Sprintf("Error parsing user id: %s", err)
 			respondWithError(w, 400, msg)
+			return
 		}
 
 		// Check chirp length
@@ -218,6 +221,11 @@ func main() {
 
 		//Database insert
 		dbChirp, err := apiCfg.db.CreateChirp(req.Context(), chirpParams)
+		if err != nil {
+			msg := fmt.Sprintf("Error creating chirp: %s", err)
+			respondWithError(w, 400, msg)
+			return
+		}
 
 		//Convert to JSON chirp struct
 		chirp := MapDBChirpToChirp(dbChirp)
@@ -230,6 +238,7 @@ func main() {
 		if err != nil {
 			msg := fmt.Sprintf("Error getting chirps: %s", err)
 			respondWithError(w, 500, msg)
+			return
 		}
 		chirpsList := []Chirp{}
 		for _, dbChirp := range dbChirpsList {
@@ -238,19 +247,22 @@ func main() {
 		}
 		respondWithJSON(w, 200, chirpsList)
 	})
-	
-	mux.HandleFunc("GET /api/chirps", func(w http.ResponseWriter, req *http.Request) {
-		dbChirpsList, err := apiCfg.db.ListChirps(req.Context())
+
+	mux.HandleFunc("GET /api/chirps/{chirpID}", func(w http.ResponseWriter, req *http.Request) {
+		parsedChirpID, err := uuid.Parse(req.PathValue("chirpID"))
 		if err != nil {
-			msg := fmt.Sprintf("Error getting chirps: %s", err)
-			respondWithError(w, 500, msg)
+			msg := fmt.Sprintf("Error parsing chirp id: %s", err)
+			respondWithError(w, 400, msg)
+			return
 		}
-		chirpsList := []Chirp{}
-		for _, dbChirp := range dbChirpsList {
-			chirp := MapDBChirpToChirp(dbChirp)
-			chirpsList = append(chirpsList, chirp)
+		dbChirp, err := apiCfg.db.GetChirp(req.Context(), parsedChirpID)
+		if err != nil {
+			msg := fmt.Sprintf("Error finding chirp: %s", err)
+			respondWithError(w, 404, msg)
+			return
 		}
-		respondWithJSON(w, 200, chirpsList)
+		chirp := MapDBChirpToChirp(dbChirp)
+		respondWithJSON(w, 200, chirp)
 	})
 
 	err = server.ListenAndServe()
