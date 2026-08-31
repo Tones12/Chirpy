@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"strings"
 	"errors"
+	"crypto/rand"
+	"encoding/hex"
 )
 
 type TokenType string
@@ -80,4 +82,13 @@ func GetBearerToken(headers http.Header) (string, error) {
 	token := strings.TrimPrefix(authHeader, "Bearer ")
 	token = strings.TrimSpace(token)
 	return token, nil
+}
+
+func MakeRefreshToken() string {
+	key := make([]byte, 32)
+	if _, err := rand.Read(key); err != nil {
+    	panic(err)
+	}
+	encodedKey := hex.EncodeToString(key)
+	return encodedKey
 }

@@ -4,20 +4,27 @@ import (
 	"encoding/json"
 	"net/http"
 	"fmt"
+	"time"
 
 	"github.com/Tones12/Chirpy/internal/auth"
+	"github.com/google/uuid"
 )
 
 func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req *http.Request) {
 	type parameters struct {
 		Email				string `json:"email"`
 		Password			string `json:"password"`
-		ExpiryTimeinSeconds	int `json:"expires_in_seconds"`
+	}
+	type userToken struct {
+		ID				uuid.UUID 	`json:"id"`
+		CreatedAt		time.Time 	`json:"created_at"`
+		UpdatedAt		time.Time 	`json:"updated_at"`
+		Email			string    	`json:"email"`
+		Token			string		`json:"token"`
+		RefreshToken	string		`json:"refresh_token"`
 	}
 	decoder := json.NewDecoder(req.Body)
-	params := parameters{
-		ExpiryTimeinSeconds: 3600,
-	}
+	params := parameters{}
 	err := decoder.Decode(&params)
 	if err != nil {
 		msg := fmt.Sprintf("Error decoding JSON: %s", err)
@@ -31,9 +38,6 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req *http.Request) {
 	if params.Password == "" {
 		respondWithError(w, 400, "Error, password missing")
 		return
-	}
-	if params.ExpiryTimeinSeconds <= 0 || params.ExpiryTimeinSeconds > 3600 {
-		params.ExpiryTimeinSeconds = 3600
 	}
 	dbUser, err := cfg.db.GetUserByEmail(req.Context(), params.Email)
 	if err != nil {
@@ -51,6 +55,23 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req *http.Request) {
 		respondWithError(w, 401, "incorrect email or password")
 		return
 	}
-	userResponse := MapDBUserToUser(dbUser)
+	
+	token, err := auth.MakeJWT(dbUser.ID, cfg.secret, (time.Duration(3600)*time.Second))
+	if err != nil {
+		msg := fmt.Sprintf("Error getting token: %s", err)
+		respondWithError(w, 500, msg)
+	}
+
+	refreshToken := auth.MakeRefreshToken()
+
+	userResponse := userToken{
+		ID:				dbUser.ID,
+		CreatedAt:		dbUser.CreatedAt,
+		UpdatedAt:		dbUser.UpdatedAt,	
+		Email:			dbUser.Email,
+		Token:			token,
+		RefreshToken:	refreshToken,
+	}
+
 	respondWithJSON(w, 200, userResponse)
 }

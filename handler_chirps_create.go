@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/Tones12/Chirpy/internal/database"
+	"github.com/Tones12/Chirpy/internal/auth"
 	"github.com/google/uuid"
 )
 
@@ -32,7 +33,6 @@ func MapDBChirpToChirp(dbChirp database.Chirp) Chirp {
 
 func (cfg *apiConfig) handlerChirpsCreate(w http.ResponseWriter, req *http.Request) {
 		type parameters struct {
-			UserID	string `json:"user_id"`
 			Body	string `json:"body"`
 		}
 
@@ -40,18 +40,22 @@ func (cfg *apiConfig) handlerChirpsCreate(w http.ResponseWriter, req *http.Reque
 		params := parameters{}
 		err := decoder.Decode(&params)
 		if err != nil {
-			msg := fmt.Sprintf("Error decoding JSON: %s", err)
+			msg := fmt.Sprintf("error decoding JSON: %s", err)
 			respondWithError(w, 500, msg)
 			return
 		}
 
-		// Check if user id is valid
-		parsedUserID, err := uuid.Parse(params.UserID)
+		token, err := auth.GetBearerToken(req.Header)
 		if err != nil {
-			msg := fmt.Sprintf("Error parsing user id: %s", err)
+			msg := fmt.Sprintf("error getting bearer token: %s", err)
 			respondWithError(w, 400, msg)
-			return
 		}
+		userID, err := auth.ValidateJWT(token, cfg.secret)
+		if err != nil {
+			msg := fmt.Sprintf("error validating user: %s", err)
+			respondWithError(w, 401, msg)
+		}
+
 		// Check chirp length
 		if len(params.Body) > 140 {
 			respondWithError(w, 400, "Chirp is too long, must be 140 characters or less")
@@ -63,7 +67,7 @@ func (cfg *apiConfig) handlerChirpsCreate(w http.ResponseWriter, req *http.Reque
 		cleanText := censorText(dirtyText, badWords)
 		chirpParams := database.CreateChirpParams{
 			Body:   cleanText,
-			UserID: parsedUserID,
+			UserID: userID,
 		}
 		//Database insert
 		dbChirp, err := cfg.db.CreateChirp(req.Context(), chirpParams)
