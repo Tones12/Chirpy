@@ -2,11 +2,12 @@ package main
 
 import (
 	"encoding/json"
-	"net/http"
 	"fmt"
+	"net/http"
 	"time"
 
 	"github.com/Tones12/Chirpy/internal/auth"
+	"github.com/Tones12/Chirpy/internal/database"
 	"github.com/google/uuid"
 )
 
@@ -15,7 +16,7 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req *http.Request) {
 		Email				string `json:"email"`
 		Password			string `json:"password"`
 	}
-	type userToken struct {
+	type userTokens struct {
 		ID				uuid.UUID 	`json:"id"`
 		CreatedAt		time.Time 	`json:"created_at"`
 		UpdatedAt		time.Time 	`json:"updated_at"`
@@ -56,15 +57,25 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	
-	token, err := auth.MakeJWT(dbUser.ID, cfg.secret, (time.Duration(3600)*time.Second))
+	token, err := auth.MakeJWT(dbUser.ID, cfg.secret, (time.Duration(1)*time.Hour))
 	if err != nil {
-		msg := fmt.Sprintf("Error getting token: %s", err)
+		msg := fmt.Sprintf("Error getting access token: %s", err)
 		respondWithError(w, 500, msg)
+		return
 	}
 
 	refreshToken := auth.MakeRefreshToken()
-
-	userResponse := userToken{
+	refreshTokenParams := database.CreateRefreshTokenParams{
+		Token: refreshToken,
+		UserID: dbUser.ID,
+	}
+	_, err = cfg.db.CreateRefreshToken(req.Context(), refreshTokenParams)
+	if err != nil {
+		msg := fmt.Sprintf("Error getting refresh token: %s", err)
+		respondWithError(w, 500, msg)
+		return
+	}
+	userResponse := userTokens{
 		ID:				dbUser.ID,
 		CreatedAt:		dbUser.CreatedAt,
 		UpdatedAt:		dbUser.UpdatedAt,	
@@ -72,6 +83,5 @@ func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, req *http.Request) {
 		Token:			token,
 		RefreshToken:	refreshToken,
 	}
-
 	respondWithJSON(w, 200, userResponse)
 }

@@ -22,7 +22,6 @@ func (cfg *apiConfig) handlerChirpsGet(w http.ResponseWriter, req *http.Request)
 	}
 	chirp := MapDBChirpToChirp(dbChirp)
 	respondWithJSON(w, 200, chirp)
-
 }
 
 func (cfg *apiConfig) handlerChirpsRetrieve(w http.ResponseWriter, req *http.Request) {
@@ -38,5 +37,4 @@ func (cfg *apiConfig) handlerChirpsRetrieve(w http.ResponseWriter, req *http.Req
 		chirpsList = append(chirpsList, chirp)
 	}
 	respondWithJSON(w, 200, chirpsList)
-
 }
