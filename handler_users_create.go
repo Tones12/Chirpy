@@ -4,29 +4,10 @@ import (
 	"encoding/json"
 	"net/http"
 	"fmt"
-	"time"
 
 	"github.com/Tones12/Chirpy/internal/auth"
 	"github.com/Tones12/Chirpy/internal/database"
-	"github.com/google/uuid"
 )
-
-type User struct {
-	ID			uuid.UUID 	`json:"id"`
-	CreatedAt	time.Time 	`json:"created_at"`
-	UpdatedAt	time.Time 	`json:"updated_at"`
-	Email		string    	`json:"email"`
-	Password	string		`json:"-"`
-}
-
-func MapDBUserToUser(dbUser database.User) User {
-	return User{
-		ID:        dbUser.ID,
-		Email:     dbUser.Email,
-		CreatedAt: dbUser.CreatedAt,
-		UpdatedAt: dbUser.UpdatedAt,
-	}
-}
 
 func (cfg *apiConfig) handlerUsersCreate(w http.ResponseWriter, req *http.Request) {
 		type parameters struct {

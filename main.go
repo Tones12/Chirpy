@@ -6,11 +6,30 @@ import (
 	"net/http"
 	"os"
 	"sync/atomic"
+	"time"
 
 	"github.com/Tones12/Chirpy/internal/database"
 	"github.com/joho/godotenv"
+	"github.com/google/uuid"
 	_ "github.com/lib/pq"
 )
+
+type User struct {
+	ID			uuid.UUID 	`json:"id"`
+	CreatedAt	time.Time 	`json:"created_at"`
+	UpdatedAt	time.Time 	`json:"updated_at"`
+	Email		string    	`json:"email"`
+	Password	string		`json:"-"`
+}
+
+func MapDBUserToUser(dbUser database.User) User {
+	return User{
+		ID:        dbUser.ID,
+		Email:     dbUser.Email,
+		CreatedAt: dbUser.CreatedAt,
+		UpdatedAt: dbUser.UpdatedAt,
+	}
+}
 
 type apiConfig struct {
 	fileserverHits	atomic.Int32
@@ -56,10 +75,12 @@ func main() {
 	mux.HandleFunc("POST /api/revoke", apiCfg.handlerRevokeRefreshToken)
 
 	mux.HandleFunc("POST /api/users", apiCfg.handlerUsersCreate)
+	mux.HandleFunc("PUT /api/users", apiCfg.handlerUsersUpdate)
 
 	mux.HandleFunc("POST /api/chirps", apiCfg.handlerChirpsCreate)
 	mux.HandleFunc("GET /api/chirps", apiCfg.handlerChirpsRetrieve)
 	mux.HandleFunc("GET /api/chirps/{chirpID}", apiCfg.handlerChirpsGet)
+	mux.HandleFunc("DELETE /api/chirps/{chirpID}", apiCfg.handlerChirpsDelete)
 	
 	mux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetricsfunc)
 	mux.HandleFunc("POST /admin/reset", apiCfg.handlerReset)
