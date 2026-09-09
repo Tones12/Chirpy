@@ -85,6 +85,8 @@ func main() {
 	mux.HandleFunc("GET /admin/metrics", apiCfg.handlerMetricsfunc)
 	mux.HandleFunc("POST /admin/reset", apiCfg.handlerReset)
 
+	mux.HandleFunc("POST /api/polka/webhooks", apiCfg.handlerUpgrade)
+
 	err = server.ListenAndServe()
 	if err != nil {
 		log.Printf("Error: %s", err)
